@@ -2,6 +2,7 @@ package main
 
 import (
 	"github.com/afanasjev/metrics-collector/internal/handler/counter"
+	"github.com/afanasjev/metrics-collector/internal/handler/gauge"
 	"github.com/afanasjev/metrics-collector/internal/handler/update"
 	"net/http"
 )
@@ -20,7 +21,7 @@ func run() {
 	mux := http.NewServeMux()
 	mux.Handle(UpdatePath, http.StripPrefix(UpdatePath, &update.Handler{}))
 	mux.Handle(CounterUpdatePath, http.StripPrefix(CounterUpdatePath, &counter.Handler{}))
-	mux.Handle(GaugeUpdatePath, http.StripPrefix(GaugeUpdatePath, &counter.Handler{}))
+	mux.Handle(GaugeUpdatePath, http.StripPrefix(GaugeUpdatePath, &gauge.Handler{}))
 	if err := http.ListenAndServe(":8080", mux); err != nil {
 		panic(err)
 	}
