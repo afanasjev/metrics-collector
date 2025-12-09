@@ -65,9 +65,9 @@ func TestHandle(t *testing.T) {
 
 			// If status is OK, verify the counter was updated
 			if tt.expectedStatus == http.StatusOK {
-				value, exists := storage.GetCounter(tt.metricName)
-				if !exists {
-					t.Error("Counter should exist after successful update")
+				value, err := storage.GetCounter(tt.metricName)
+				if err != nil {
+					t.Fatalf("GetCounter() error = %v", err)
 				}
 				if value == 0 && tt.metricValue != "0" {
 					t.Errorf("Counter value should not be zero for non-zero input")
@@ -92,7 +92,10 @@ func TestHandleMultipleUpdates(t *testing.T) {
 		t.Errorf("First update failed with status %v", rr1.Code)
 	}
 
-	value1, _ := storage.GetCounter(metricName)
+	value1, err := storage.GetCounter(metricName)
+	if err != nil {
+		t.Fatalf("GetCounter() after first update = %v", err)
+	}
 	if value1 != 10 {
 		t.Errorf("After first update, counter = %v, want 10", value1)
 	}
@@ -108,7 +111,10 @@ func TestHandleMultipleUpdates(t *testing.T) {
 		t.Errorf("Second update failed with status %v", rr2.Code)
 	}
 
-	value2, _ := storage.GetCounter(metricName)
+	value2, err := storage.GetCounter(metricName)
+	if err != nil {
+		t.Fatalf("GetCounter() after second update = %v", err)
+	}
 	if value2 != 15 {
 		t.Errorf("After second update, counter = %v, want 15", value2)
 	}

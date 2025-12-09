@@ -70,9 +70,8 @@ func TestHandle(t *testing.T) {
 
 			// If status is OK, verify the gauge was updated
 			if tt.expectedStatus == http.StatusOK {
-				_, exists := storage.GetGauge(tt.metricName)
-				if !exists {
-					t.Error("Gauge should exist after successful update")
+				if _, err := storage.GetGauge(tt.metricName); err != nil {
+					t.Fatalf("GetGauge() error = %v", err)
 				}
 			}
 		})
@@ -94,7 +93,10 @@ func TestHandleMultipleUpdates(t *testing.T) {
 		t.Errorf("First update failed with status %v", rr1.Code)
 	}
 
-	value1, _ := storage.GetGauge(metricName)
+	value1, err := storage.GetGauge(metricName)
+	if err != nil {
+		t.Fatalf("GetGauge() after first update = %v", err)
+	}
 	if value1 != 10.5 {
 		t.Errorf("After first update, gauge = %v, want 10.5", value1)
 	}
@@ -110,7 +112,10 @@ func TestHandleMultipleUpdates(t *testing.T) {
 		t.Errorf("Second update failed with status %v", rr2.Code)
 	}
 
-	value2, _ := storage.GetGauge(metricName)
+	value2, err := storage.GetGauge(metricName)
+	if err != nil {
+		t.Fatalf("GetGauge() after second update = %v", err)
+	}
 	if value2 != 20.3 {
 		t.Errorf("After second update, gauge = %v, want 20.3", value2)
 	}

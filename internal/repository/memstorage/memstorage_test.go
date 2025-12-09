@@ -36,9 +36,9 @@ func TestSetCounter(t *testing.T) {
 				t.Errorf("SetCounter() error = %v", err)
 			}
 
-			got, exists := storage.GetCounter(tt.metric)
-			if !exists {
-				t.Errorf("GetCounter() metric should exist")
+			got, err := storage.GetCounter(tt.metric)
+			if err != nil {
+				t.Fatalf("GetCounter() error = %v", err)
 			}
 			if got != tt.expected {
 				t.Errorf("GetCounter() = %v, want %v", got, tt.expected)
@@ -67,9 +67,9 @@ func TestSetCounterConcurrent(t *testing.T) {
 
 	wg.Wait()
 
-	got, exists := storage.GetCounter(metricName)
-	if !exists {
-		t.Error("GetCounter() metric should exist after concurrent writes")
+	got, err := storage.GetCounter(metricName)
+	if err != nil {
+		t.Fatalf("GetCounter() error after concurrent writes = %v", err)
 	}
 	expected := int64(goroutines * iterations)
 	if got != expected {
@@ -99,9 +99,9 @@ func TestSetGauge(t *testing.T) {
 				t.Errorf("SetGauge() error = %v", err)
 			}
 
-			got, exists := storage.GetGauge(tt.metric)
-			if !exists {
-				t.Errorf("GetGauge() metric should exist")
+			got, err := storage.GetGauge(tt.metric)
+			if err != nil {
+				t.Fatalf("GetGauge() error = %v", err)
 			}
 			if got != tt.expected {
 				t.Errorf("GetGauge() = %v, want %v", got, tt.expected)
@@ -127,9 +127,9 @@ func TestSetGaugeConcurrent(t *testing.T) {
 
 	wg.Wait()
 
-	got, exists := storage.GetGauge(metricName)
-	if !exists {
-		t.Error("GetGauge() metric should exist after concurrent writes")
+	got, err := storage.GetGauge(metricName)
+	if err != nil {
+		t.Fatalf("GetGauge() error after concurrent writes = %v", err)
 	}
 	// Последнее значение может быть любым из записанных
 	if got < 0 || got >= float64(goroutines) {
@@ -139,17 +139,17 @@ func TestSetGaugeConcurrent(t *testing.T) {
 
 func TestGetCounterNonExistent(t *testing.T) {
 	storage := GetMemStorage()
-	_, exists := storage.GetCounter("nonExistent")
-	if exists {
-		t.Error("GetCounter() should return false for non-existent metric")
+	_, err := storage.GetCounter("nonExistent")
+	if err == nil {
+		t.Error("GetCounter() should return error for non-existent metric")
 	}
 }
 
 func TestGetGaugeNonExistent(t *testing.T) {
 	storage := GetMemStorage()
-	_, exists := storage.GetGauge("nonExistent")
-	if exists {
-		t.Error("GetGauge() should return false for non-existent metric")
+	_, err := storage.GetGauge("nonExistent")
+	if err == nil {
+		t.Error("GetGauge() should return error for non-existent metric")
 	}
 }
 

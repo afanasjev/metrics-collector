@@ -46,9 +46,8 @@ func TestUpdateCounterEndpoint(t *testing.T) {
 
 			// Verify storage if update was successful
 			if tt.expectedStatus == http.StatusOK {
-				_, exists := storage.GetCounter("testCounter")
-				if !exists {
-					t.Error("Counter should exist after successful update")
+				if _, err := storage.GetCounter("testCounter"); err != nil {
+					t.Fatalf("GetCounter() error = %v", err)
 				}
 			}
 		})
@@ -90,9 +89,8 @@ func TestUpdateGaugeEndpoint(t *testing.T) {
 
 			// Verify storage if update was successful
 			if tt.expectedStatus == http.StatusOK {
-				_, exists := storage.GetGauge("testGauge")
-				if !exists {
-					t.Error("Gauge should exist after successful update")
+				if _, err := storage.GetGauge("testGauge"); err != nil {
+					t.Fatalf("GetGauge() error = %v", err)
 				}
 			}
 		})
