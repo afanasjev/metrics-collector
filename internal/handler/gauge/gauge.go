@@ -3,12 +3,13 @@ package gauge
 import (
 	"errors"
 	"fmt"
-	"github.com/afanasjev/metrics-collector/internal/handler"
-	"github.com/afanasjev/metrics-collector/internal/repository/memstorage"
 	"log"
 	"net/http"
 	"strconv"
 	"strings"
+
+	"github.com/afanasjev/metrics-collector/internal/handler"
+	"github.com/afanasjev/metrics-collector/internal/repository/memstorage"
 )
 
 type Handler struct{}
@@ -56,4 +57,25 @@ func getGaugeValue(path string) (float64, error) {
 	}
 
 	return value, nil
+}
+func Handle(w http.ResponseWriter, r *http.Request) {
+	log.SetPrefix("[handler/counter/ServeHTTP")
+
+	metricName := r.PathValue("metricName")
+
+	metricValue, err := strconv.ParseFloat(r.PathValue("metricValue"), 64)
+	if err != nil {
+		log.Print(err)
+		w.WriteHeader(http.StatusBadRequest)
+		return
+	}
+
+	storage := memstorage.GetMemStorage()
+	err = storage.SetGauge(metricName, metricValue)
+	if err != nil {
+		log.Print(err)
+		w.WriteHeader(http.StatusInternalServerError)
+		return
+	}
+	log.Print(storage.PrintGauge())
 }

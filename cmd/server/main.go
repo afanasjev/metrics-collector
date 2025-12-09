@@ -1,10 +1,12 @@
 package main
 
 import (
+	"net/http"
+
 	"github.com/afanasjev/metrics-collector/internal/handler/counter"
 	"github.com/afanasjev/metrics-collector/internal/handler/gauge"
-	"github.com/afanasjev/metrics-collector/internal/handler/update"
-	"net/http"
+
+	"github.com/go-chi/chi/v5"
 )
 
 const (
@@ -18,11 +20,14 @@ func main() {
 }
 
 func run() {
-	mux := http.NewServeMux()
-	mux.Handle(UpdatePath, http.StripPrefix(UpdatePath, &update.Handler{}))
-	mux.Handle(CounterUpdatePath, http.StripPrefix(CounterUpdatePath, &counter.Handler{}))
-	mux.Handle(GaugeUpdatePath, http.StripPrefix(GaugeUpdatePath, &gauge.Handler{}))
-	if err := http.ListenAndServe(":8080", mux); err != nil {
+	router := chi.NewRouter()
+	router.Post("/update", func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusBadRequest)
+	})
+
+	router.Post("/update/counter/{metricName}/{metricValue}", counter.Handle)
+	router.Post("/update/gauge/{metricName}/{metricValue}", gauge.Handle)
+	if err := http.ListenAndServe(":8080", router); err != nil {
 		panic(err)
 	}
 }
