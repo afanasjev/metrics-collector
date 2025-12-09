@@ -27,8 +27,10 @@ func run() {
 	router.Post("/update/{metricType}/{metricName}/{metricValue}", func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusBadRequest)
 	})
-	router.Post("/update/counter/{metricName}/{metricValue}", counter.Handle)
-	router.Post("/update/gauge/{metricName}/{metricValue}", gauge.Handle)
+	router.Post("/update/counter/{metricName}/{metricValue}", counter.Set)
+	router.Post("/update/gauge/{metricName}/{metricValue}", gauge.Set)
+	router.Get("/update/counter/{metricName}", counter.Get)
+	router.Get("/update/gauge/{metricName}", gauge.Get)
 
 	if err := http.ListenAndServe(":8080", router); err != nil {
 		panic(err)

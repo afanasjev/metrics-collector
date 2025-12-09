@@ -61,16 +61,22 @@ func (ms *MemStorage) PrintGauge() string {
 	return fmt.Sprintf("%#v", storage.gauge.data)
 }
 
-func (ms *MemStorage) GetCounter(name string) (int64, bool) {
+func (ms *MemStorage) GetCounter(name string) (int64, error) {
 	ms.counter.mutex.Lock()
 	defer ms.counter.mutex.Unlock()
 	value, ok := ms.counter.data[name]
-	return value, ok
+	if !ok {
+		return 0, fmt.Errorf("counter %s does not exist", name)
+	}
+	return value, nil
 }
 
-func (ms *MemStorage) GetGauge(name string) (float64, bool) {
+func (ms *MemStorage) GetGauge(name string) (float64, error) {
 	ms.gauge.mutex.Lock()
 	defer ms.gauge.mutex.Unlock()
 	value, ok := ms.gauge.data[name]
-	return value, ok
+	if !ok {
+		return 0, fmt.Errorf("gauge %s does not exist", name)
+	}
+	return value, nil
 }

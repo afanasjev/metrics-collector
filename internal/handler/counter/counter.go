@@ -1,6 +1,7 @@
 package counter
 
 import (
+	"fmt"
 	"log"
 	"net/http"
 	"strconv"
@@ -10,7 +11,7 @@ import (
 
 type Handler struct{}
 
-func Handle(w http.ResponseWriter, r *http.Request) {
+func Set(w http.ResponseWriter, r *http.Request) {
 	log.SetPrefix("[handler/counter/ServeHTTP")
 	metricName := r.PathValue("metricName")
 
@@ -29,4 +30,15 @@ func Handle(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	log.Print(storage.PrintCounter())
+}
+
+func Get(w http.ResponseWriter, r *http.Request) {
+	log.SetPrefix("[handler/counter/Get")
+	metricName := r.PathValue("metricName")
+	storage := memstorage.GetMemStorage()
+	value, err := storage.GetCounter(metricName)
+	if err != nil {
+		log.Print(err)
+	}
+	fmt.Fprintf(w, "%v", value)
 }
