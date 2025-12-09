@@ -39,6 +39,8 @@ func Get(w http.ResponseWriter, r *http.Request) {
 	value, err := storage.GetCounter(metricName)
 	if err != nil {
 		log.Print(err)
+		w.WriteHeader(http.StatusNotFound)
+		return
 	}
 	fmt.Fprintf(w, "%v", value)
 }
