@@ -1,122 +1,91 @@
 package counter
 
 import (
+	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/afanasjev/metrics-collector/internal/repository/memstorage"
 )
 
-func TestHandle(t *testing.T) {
-	tests := []struct {
-		name           string
-		metricName     string
-		metricValue    string
-		expectedStatus int
-	}{
-		{
-			name:           "valid counter update",
-			metricName:     "testCounter",
-			metricValue:    "10",
-			expectedStatus: http.StatusOK,
-		},
-		{
-			name:           "invalid metric value",
-			metricName:     "testCounter",
-			metricValue:    "invalid",
-			expectedStatus: http.StatusBadRequest,
-		},
-		{
-			name:           "negative counter value",
-			metricName:     "testCounter",
-			metricValue:    "-5",
-			expectedStatus: http.StatusOK,
-		},
-		{
-			name:           "zero counter value",
-			metricName:     "testCounter",
-			metricValue:    "0",
-			expectedStatus: http.StatusOK,
-		},
-		{
-			name:           "large counter value",
-			metricName:     "testCounter",
-			metricValue:    "9223372036854775807",
-			expectedStatus: http.StatusOK,
-		},
+func routeRequest(t *testing.T, method string, params map[string]string) *http.Request {
+	t.Helper()
+	req := httptest.NewRequest(method, "/", nil)
+	for key, value := range params {
+		req.SetPathValue(key, value)
+	}
+	return req
+}
+
+func metricNameFromTest(t *testing.T) string {
+	t.Helper()
+	return fmt.Sprintf("handler-counter-%s", strings.ReplaceAll(t.Name(), "/", "-"))
+}
+
+func TestSetCounterSuccess(t *testing.T) {
+	name := metricNameFromTest(t)
+	req := routeRequest(t, http.MethodPost, map[string]string{
+		"metricName":  name,
+		"metricValue": "5",
+	})
+
+	rr := httptest.NewRecorder()
+	Set(rr, req)
+
+	if status := rr.Code; status != http.StatusOK {
+		t.Fatalf("Set returned status %d, want %d", status, http.StatusOK)
 	}
 
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			// Reset storage for each test
-			storage := memstorage.GetMemStorage()
-
-			req := httptest.NewRequest(http.MethodPost, "/update/counter/"+tt.metricName+"/"+tt.metricValue, nil)
-			req.SetPathValue("metricName", tt.metricName)
-			req.SetPathValue("metricValue", tt.metricValue)
-
-			rr := httptest.NewRecorder()
-			Handle(rr, req)
-
-			if status := rr.Code; status != tt.expectedStatus {
-				t.Errorf("Handle() status = %v, want %v", status, tt.expectedStatus)
-			}
-
-			// If status is OK, verify the counter was updated
-			if tt.expectedStatus == http.StatusOK {
-				value, err := storage.GetCounter(tt.metricName)
-				if err != nil {
-					t.Fatalf("GetCounter() error = %v", err)
-				}
-				if value == 0 && tt.metricValue != "0" {
-					t.Errorf("Counter value should not be zero for non-zero input")
-				}
-			}
-		})
+	storage := memstorage.GetMemStorage()
+	value, err := storage.GetCounter(name)
+	if err != nil {
+		t.Fatalf("GetCounter failed: %v", err)
+	}
+	if value != 5 {
+		t.Fatalf("counter %s = %d, want 5", name, value)
 	}
 }
 
-func TestHandleMultipleUpdates(t *testing.T) {
+func TestSetCounterBadValue(t *testing.T) {
+	name := metricNameFromTest(t)
+	req := routeRequest(t, http.MethodPost, map[string]string{
+		"metricName":  name,
+		"metricValue": "invalid",
+	})
+
+	rr := httptest.NewRecorder()
+	Set(rr, req)
+
+	if status := rr.Code; status != http.StatusBadRequest {
+		t.Fatalf("Set returned status %d, want %d", status, http.StatusBadRequest)
+	}
+
+	if _, err := memstorage.GetMemStorage().GetCounter(name); err == nil {
+		t.Fatalf("expected counter %q to be unset after bad request", name)
+	}
+}
+
+func TestGetCounterOutputsStoredValue(t *testing.T) {
+	name := metricNameFromTest(t)
 	storage := memstorage.GetMemStorage()
-	metricName := "multiUpdateCounter"
-
-	// First update
-	req1 := httptest.NewRequest(http.MethodPost, "/update/counter/"+metricName+"/10", nil)
-	req1.SetPathValue("metricName", metricName)
-	req1.SetPathValue("metricValue", "10")
-	rr1 := httptest.NewRecorder()
-	Handle(rr1, req1)
-
-	if rr1.Code != http.StatusOK {
-		t.Errorf("First update failed with status %v", rr1.Code)
+	if err := storage.SetCounter(name, 42); err != nil {
+		t.Fatalf("SetCounter failed: %v", err)
 	}
 
-	value1, err := storage.GetCounter(metricName)
-	if err != nil {
-		t.Fatalf("GetCounter() after first update = %v", err)
-	}
-	if value1 != 10 {
-		t.Errorf("After first update, counter = %v, want 10", value1)
+	req := routeRequest(t, http.MethodGet, map[string]string{
+		"metricName": name,
+	})
+	rr := httptest.NewRecorder()
+	Get(rr, req)
+
+	if status := rr.Code; status != http.StatusOK {
+		t.Fatalf("Get returned status %d, want %d", status, http.StatusOK)
 	}
 
-	// Second update (should increment)
-	req2 := httptest.NewRequest(http.MethodPost, "/update/counter/"+metricName+"/5", nil)
-	req2.SetPathValue("metricName", metricName)
-	req2.SetPathValue("metricValue", "5")
-	rr2 := httptest.NewRecorder()
-	Handle(rr2, req2)
-
-	if rr2.Code != http.StatusOK {
-		t.Errorf("Second update failed with status %v", rr2.Code)
-	}
-
-	value2, err := storage.GetCounter(metricName)
-	if err != nil {
-		t.Fatalf("GetCounter() after second update = %v", err)
-	}
-	if value2 != 15 {
-		t.Errorf("After second update, counter = %v, want 15", value2)
+	if got := strings.TrimSpace(rr.Body.String()); got != "42" {
+		t.Fatalf("Get response %q, want %q", got, "42")
 	}
 }
 

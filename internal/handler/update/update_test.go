@@ -6,14 +6,14 @@ import (
 	"testing"
 )
 
-func TestDefaultHandler(t *testing.T) {
-	req := httptest.NewRequest(http.MethodPost, "/update", nil)
+func TestDefaultHandlerReturnsBadRequest(t *testing.T) {
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
 	rr := httptest.NewRecorder()
 
 	DefaultHandler(rr, req)
 
 	if status := rr.Code; status != http.StatusBadRequest {
-		t.Errorf("DefaultHandler() status = %v, want %v", status, http.StatusBadRequest)
+		t.Fatalf("DefaultHandler returned status %d, want %d", status, http.StatusBadRequest)
 	}
 }
 
