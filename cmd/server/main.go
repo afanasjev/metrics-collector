@@ -22,11 +22,14 @@ func main() {
 func run() {
 	router := chi.NewRouter()
 	router.Post("/update", func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusNotFound)
+	})
+	router.Post("/update/{metricType}/{metricName}/{metricValue}", func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusBadRequest)
 	})
-
 	router.Post("/update/counter/{metricName}/{metricValue}", counter.Handle)
 	router.Post("/update/gauge/{metricName}/{metricValue}", gauge.Handle)
+
 	if err := http.ListenAndServe(":8080", router); err != nil {
 		panic(err)
 	}
