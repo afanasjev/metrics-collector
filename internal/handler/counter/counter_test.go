@@ -1,184 +1,91 @@
 package counter
 
 import (
-	"bytes"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
+
+	"github.com/afanasjev/metrics-collector/internal/repository/memstorage"
 )
 
-func TestGetCounterValue(t *testing.T) {
-	tests := []struct {
-		name        string
-		path        string
-		expected    int64
-		expectError bool
-	}{
-		{
-			name:        "valid path with value",
-			path:        "counterName/123",
-			expected:    123,
-			expectError: false,
-		},
-		{
-			name:        "valid path with negative value should return error",
-			path:        "counterName/-456",
-			expected:    0,
-			expectError: true,
-		},
-		{
-			name:        "valid path with zero",
-			path:        "counterName/0",
-			expected:    0,
-			expectError: false,
-		},
-		{
-			name:        "path without value",
-			path:        "counterName",
-			expected:    0,
-			expectError: true,
-		},
-		{
-			name:        "empty path",
-			path:        "",
-			expected:    0,
-			expectError: true,
-		},
-		{
-			name:        "path with invalid value",
-			path:        "counterName/abc",
-			expected:    0,
-			expectError: true,
-		},
-		{
-			name:        "path with float value",
-			path:        "counterName/123.45",
-			expected:    0,
-			expectError: true,
-		},
-		{
-			name:        "path with large value",
-			path:        "counterName/9223372036854775807",
-			expected:    9223372036854775807,
-			expectError: false,
-		},
+func routeRequest(t *testing.T, method string, params map[string]string) *http.Request {
+	t.Helper()
+	req := httptest.NewRequest(method, "/", nil)
+	for key, value := range params {
+		req.SetPathValue(key, value)
+	}
+	return req
+}
+
+func metricNameFromTest(t *testing.T) string {
+	t.Helper()
+	return fmt.Sprintf("handler-counter-%s", strings.ReplaceAll(t.Name(), "/", "-"))
+}
+
+func TestSetCounterSuccess(t *testing.T) {
+	name := metricNameFromTest(t)
+	req := routeRequest(t, http.MethodPost, map[string]string{
+		"metricName":  name,
+		"metricValue": "5",
+	})
+
+	rr := httptest.NewRecorder()
+	Set(rr, req)
+
+	if status := rr.Code; status != http.StatusOK {
+		t.Fatalf("Set returned status %d, want %d", status, http.StatusOK)
 	}
 
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			result, err := getCounterValue(tt.path)
-
-			if tt.expectError {
-				if err == nil {
-					t.Errorf("Expected error for path %q, but got nil", tt.path)
-				}
-			} else {
-				if err != nil {
-					t.Errorf("Unexpected error for path %q: %v", tt.path, err)
-				}
-				if result != tt.expected {
-					t.Errorf("Expected value %d, got %d", tt.expected, result)
-				}
-			}
-		})
+	storage := memstorage.GetMemStorage()
+	value, err := storage.GetCounter(name)
+	if err != nil {
+		t.Fatalf("GetCounter failed: %v", err)
+	}
+	if value != 5 {
+		t.Fatalf("counter %s = %d, want 5", name, value)
 	}
 }
 
-func TestHandler_ServeHTTP(t *testing.T) {
-	tests := []struct {
-		name           string
-		method         string
-		path           string
-		expectedStatus int
-	}{
-		{
-			name:           "valid POST request",
-			method:         http.MethodPost,
-			path:           "testCounter/123",
-			expectedStatus: http.StatusOK,
-		},
-		{
-			name:           "GET request should return NotImplemented",
-			method:         http.MethodGet,
-			path:           "testCounter/123",
-			expectedStatus: http.StatusNotImplemented,
-		},
-		{
-			name:           "PUT request should return NotImplemented",
-			method:         http.MethodPut,
-			path:           "testCounter/123",
-			expectedStatus: http.StatusNotImplemented,
-		},
-		{
-			name:           "DELETE request should return NotImplemented",
-			method:         http.MethodDelete,
-			path:           "testCounter/123",
-			expectedStatus: http.StatusNotImplemented,
-		},
-		{
-			name:           "POST request without metric name",
-			method:         http.MethodPost,
-			path:           "",
-			expectedStatus: http.StatusNotFound,
-		},
-		{
-			name:           "POST request without value",
-			method:         http.MethodPost,
-			path:           "testCounter",
-			expectedStatus: http.StatusBadRequest,
-		},
-		{
-			name:           "POST request with invalid value",
-			method:         http.MethodPost,
-			path:           "testCounter/abc",
-			expectedStatus: http.StatusBadRequest,
-		},
-		{
-			name:           "POST request with negative value should return BadRequest",
-			method:         http.MethodPost,
-			path:           "testCounter/-10",
-			expectedStatus: http.StatusBadRequest,
-		},
+func TestSetCounterBadValue(t *testing.T) {
+	name := metricNameFromTest(t)
+	req := routeRequest(t, http.MethodPost, map[string]string{
+		"metricName":  name,
+		"metricValue": "invalid",
+	})
+
+	rr := httptest.NewRecorder()
+	Set(rr, req)
+
+	if status := rr.Code; status != http.StatusBadRequest {
+		t.Fatalf("Set returned status %d, want %d", status, http.StatusBadRequest)
 	}
 
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			req := httptest.NewRequest(tt.method, "http://example.com/", bytes.NewBuffer([]byte{}))
-			req.URL.Path = tt.path
-			rec := httptest.NewRecorder()
-
-			handler := &Handler{}
-			handler.ServeHTTP(rec, req)
-
-			if rec.Code != tt.expectedStatus {
-				t.Errorf("Expected status %d, got %d", tt.expectedStatus, rec.Code)
-			}
-		})
+	if _, err := memstorage.GetMemStorage().GetCounter(name); err == nil {
+		t.Fatalf("expected counter %q to be unset after bad request", name)
 	}
 }
 
-func TestHandler_ServeHTTP_Integration(t *testing.T) {
-	// Тест на реальное сохранение значения
-	req := httptest.NewRequest(http.MethodPost, "http://example.com/", bytes.NewBuffer([]byte{}))
-	req.URL.Path = "testCounter/100"
-	rec := httptest.NewRecorder()
-
-	handler := &Handler{}
-	handler.ServeHTTP(rec, req)
-
-	if rec.Code != http.StatusOK {
-		t.Errorf("Expected status %d, got %d", http.StatusOK, rec.Code)
+func TestGetCounterOutputsStoredValue(t *testing.T) {
+	name := metricNameFromTest(t)
+	storage := memstorage.GetMemStorage()
+	if err := storage.SetCounter(name, 42); err != nil {
+		t.Fatalf("SetCounter failed: %v", err)
 	}
 
-	// Повторный запрос с тем же именем должен увеличить значение
-	req2 := httptest.NewRequest(http.MethodPost, "http://example.com/", bytes.NewBuffer([]byte{}))
-	req2.URL.Path = "testCounter/50"
-	rec2 := httptest.NewRecorder()
+	req := routeRequest(t, http.MethodGet, map[string]string{
+		"metricName": name,
+	})
+	rr := httptest.NewRecorder()
+	Get(rr, req)
 
-	handler.ServeHTTP(rec2, req2)
+	if status := rr.Code; status != http.StatusOK {
+		t.Fatalf("Get returned status %d, want %d", status, http.StatusOK)
+	}
 
-	if rec2.Code != http.StatusOK {
-		t.Errorf("Expected status %d, got %d", http.StatusOK, rec2.Code)
+	if got := strings.TrimSpace(rr.Body.String()); got != "42" {
+		t.Fatalf("Get response %q, want %q", got, "42")
 	}
 }
 

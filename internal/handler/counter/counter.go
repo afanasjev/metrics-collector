@@ -1,33 +1,21 @@
 package counter
 
 import (
-	"errors"
 	"fmt"
-	"github.com/afanasjev/metrics-collector/internal/handler"
-	"github.com/afanasjev/metrics-collector/internal/repository/memstorage"
 	"log"
 	"net/http"
 	"strconv"
-	"strings"
+
+	"github.com/afanasjev/metrics-collector/internal/repository/memstorage"
 )
 
 type Handler struct{}
 
-func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+func Set(w http.ResponseWriter, r *http.Request) {
 	log.SetPrefix("[handler/counter/ServeHTTP")
-	if r.Method != http.MethodPost {
-		log.Print("invalid http method")
-		w.WriteHeader(http.StatusNotImplemented)
-		return
-	}
-	metricName, err := handler.GetMetricName(r.URL.Path)
-	if err != nil {
-		log.Print(err)
-		w.WriteHeader(http.StatusNotFound)
-		return
-	}
+	metricName := r.PathValue("metricName")
 
-	metricValue, err := getCounterValue(r.URL.Path)
+	metricValue, err := strconv.ParseInt(r.PathValue("metricValue"), 10, 64)
 	if err != nil {
 		log.Print(err)
 		w.WriteHeader(http.StatusBadRequest)
@@ -44,16 +32,15 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	log.Print(storage.PrintCounter())
 }
 
-func getCounterValue(path string) (int64, error) {
-	params := strings.Split(path, "/")
-	if len(params) < 2 {
-		return 0, errors.New("there is no metric value")
+func Get(w http.ResponseWriter, r *http.Request) {
+	log.SetPrefix("[handler/counter/Get")
+	metricName := r.PathValue("metricName")
+	storage := memstorage.GetMemStorage()
+	value, err := storage.GetCounter(metricName)
+	if err != nil {
+		log.Print(err)
+		w.WriteHeader(http.StatusNotFound)
+		return
 	}
-
-	value, err := strconv.ParseInt(params[1], 10, 64)
-	if err != nil || value < 0 {
-		return 0, fmt.Errorf("invalid metric value: %s", params[1])
-	}
-
-	return value, nil
+	fmt.Fprintf(w, "%v", value)
 }

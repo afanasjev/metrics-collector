@@ -1,214 +1,92 @@
 package gauge
 
 import (
-	"bytes"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
+
+	"github.com/afanasjev/metrics-collector/internal/repository/memstorage"
 )
 
-func TestGetGaugeValue(t *testing.T) {
-	tests := []struct {
-		name        string
-		path        string
-		expected    float64
-		expectError bool
-	}{
-		{
-			name:        "valid path with integer value",
-			path:        "gaugeName/123",
-			expected:    123.0,
-			expectError: false,
-		},
-		{
-			name:        "valid path with float value",
-			path:        "gaugeName/123.45",
-			expected:    123.45,
-			expectError: false,
-		},
-		{
-			name:        "valid path with negative value",
-			path:        "gaugeName/-456.78",
-			expected:    -456.78,
-			expectError: false,
-		},
-		{
-			name:        "valid path with zero",
-			path:        "gaugeName/0",
-			expected:    0.0,
-			expectError: false,
-		},
-		{
-			name:        "valid path with zero float",
-			path:        "gaugeName/0.0",
-			expected:    0.0,
-			expectError: false,
-		},
-		{
-			name:        "path without value",
-			path:        "gaugeName",
-			expected:    0.0,
-			expectError: true,
-		},
-		{
-			name:        "empty path",
-			path:        "",
-			expected:    0.0,
-			expectError: true,
-		},
-		{
-			name:        "path with invalid value",
-			path:        "gaugeName/abc",
-			expected:    0.0,
-			expectError: true,
-		},
-		{
-			name:        "path with scientific notation",
-			path:        "gaugeName/1.23e-4",
-			expected:    0.000123,
-			expectError: false,
-		},
-		{
-			name:        "path with very small value",
-			path:        "gaugeName/0.000001",
-			expected:    0.000001,
-			expectError: false,
-		},
-		{
-			name:        "path with very large value",
-			path:        "gaugeName/999999999.999",
-			expected:    999999999.999,
-			expectError: false,
-		},
+func routeRequest(t *testing.T, method string, params map[string]string) *http.Request {
+	t.Helper()
+	req := httptest.NewRequest(method, "/", nil)
+	for key, value := range params {
+		req.SetPathValue(key, value)
+	}
+	return req
+}
+
+func metricNameFromTest(t *testing.T) string {
+	t.Helper()
+	return fmt.Sprintf("handler-gauge-%s", strings.ReplaceAll(t.Name(), "/", "-"))
+}
+
+func TestSetGaugeSuccess(t *testing.T) {
+	name := metricNameFromTest(t)
+	req := routeRequest(t, http.MethodPost, map[string]string{
+		"metricName":  name,
+		"metricValue": "2.5",
+	})
+
+	rr := httptest.NewRecorder()
+	Set(rr, req)
+
+	if status := rr.Code; status != http.StatusOK {
+		t.Fatalf("Set returned status %d, want %d", status, http.StatusOK)
 	}
 
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			result, err := getGaugeValue(tt.path)
-
-			if tt.expectError {
-				if err == nil {
-					t.Errorf("Expected error for path %q, but got nil", tt.path)
-				}
-			} else {
-				if err != nil {
-					t.Errorf("Unexpected error for path %q: %v", tt.path, err)
-				}
-				// Используем небольшую погрешность для сравнения float
-				epsilon := 0.0001
-				diff := result - tt.expected
-				if diff < 0 {
-					diff = -diff
-				}
-				if diff > epsilon {
-					t.Errorf("Expected value %f, got %f (diff: %f)", tt.expected, result, diff)
-				}
-			}
-		})
+	storage := memstorage.GetMemStorage()
+	value, err := storage.GetGauge(name)
+	if err != nil {
+		t.Fatalf("GetGauge failed: %v", err)
+	}
+	if value != 2.5 {
+		t.Fatalf("gauge %s = %g, want %g", name, value, 2.5)
 	}
 }
 
-func TestHandler_ServeHTTP(t *testing.T) {
-	tests := []struct {
-		name           string
-		method         string
-		path           string
-		expectedStatus int
-	}{
-		{
-			name:           "valid POST request with integer",
-			method:         http.MethodPost,
-			path:           "testGauge/123",
-			expectedStatus: http.StatusOK,
-		},
-		{
-			name:           "valid POST request with float",
-			method:         http.MethodPost,
-			path:           "testGauge/123.45",
-			expectedStatus: http.StatusOK,
-		},
-		{
-			name:           "GET request should return NotImplemented",
-			method:         http.MethodGet,
-			path:           "testGauge/123",
-			expectedStatus: http.StatusNotImplemented,
-		},
-		{
-			name:           "PUT request should return NotImplemented",
-			method:         http.MethodPut,
-			path:           "testGauge/123",
-			expectedStatus: http.StatusNotImplemented,
-		},
-		{
-			name:           "DELETE request should return NotImplemented",
-			method:         http.MethodDelete,
-			path:           "testGauge/123",
-			expectedStatus: http.StatusNotImplemented,
-		},
-		{
-			name:           "POST request without metric name",
-			method:         http.MethodPost,
-			path:           "",
-			expectedStatus: http.StatusNotFound,
-		},
-		{
-			name:           "POST request without value",
-			method:         http.MethodPost,
-			path:           "testGauge",
-			expectedStatus: http.StatusBadRequest,
-		},
-		{
-			name:           "POST request with invalid value",
-			method:         http.MethodPost,
-			path:           "testGauge/abc",
-			expectedStatus: http.StatusBadRequest,
-		},
-		{
-			name:           "POST request with negative value",
-			method:         http.MethodPost,
-			path:           "testGauge/-10.5",
-			expectedStatus: http.StatusOK,
-		},
+func TestSetGaugeBadValue(t *testing.T) {
+	name := metricNameFromTest(t)
+	req := routeRequest(t, http.MethodPost, map[string]string{
+		"metricName":  name,
+		"metricValue": "NaNnotfloat",
+	})
+
+	rr := httptest.NewRecorder()
+	Set(rr, req)
+
+	if status := rr.Code; status != http.StatusBadRequest {
+		t.Fatalf("Set returned status %d, want %d", status, http.StatusBadRequest)
 	}
 
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			req := httptest.NewRequest(tt.method, "http://example.com/", bytes.NewBuffer([]byte{}))
-			req.URL.Path = tt.path
-			rec := httptest.NewRecorder()
-
-			handler := &Handler{}
-			handler.ServeHTTP(rec, req)
-
-			if rec.Code != tt.expectedStatus {
-				t.Errorf("Expected status %d, got %d", tt.expectedStatus, rec.Code)
-			}
-		})
+	if _, err := memstorage.GetMemStorage().GetGauge(name); err == nil {
+		t.Fatalf("expected gauge %q to be unset after bad request", name)
 	}
 }
 
-func TestHandler_ServeHTTP_Integration(t *testing.T) {
-	// Тест на реальное сохранение значения
-	req := httptest.NewRequest(http.MethodPost, "http://example.com/", bytes.NewBuffer([]byte{}))
-	req.URL.Path = "testGauge/100.5"
-	rec := httptest.NewRecorder()
-
-	handler := &Handler{}
-	handler.ServeHTTP(rec, req)
-
-	if rec.Code != http.StatusOK {
-		t.Errorf("Expected status %d, got %d", http.StatusOK, rec.Code)
+func TestGetGaugeOutputsStoredValue(t *testing.T) {
+	name := metricNameFromTest(t)
+	storage := memstorage.GetMemStorage()
+	const expected = 1.234
+	if err := storage.SetGauge(name, expected); err != nil {
+		t.Fatalf("SetGauge failed: %v", err)
 	}
 
-	// Повторный запрос должен перезаписать значение
-	req2 := httptest.NewRequest(http.MethodPost, "http://example.com/", bytes.NewBuffer([]byte{}))
-	req2.URL.Path = "testGauge/200.75"
-	rec2 := httptest.NewRecorder()
+	req := routeRequest(t, http.MethodGet, map[string]string{
+		"metricName": name,
+	})
+	rr := httptest.NewRecorder()
+	Get(rr, req)
 
-	handler.ServeHTTP(rec2, req2)
+	if status := rr.Code; status != http.StatusOK {
+		t.Fatalf("Get returned status %d, want %d", status, http.StatusOK)
+	}
 
-	if rec2.Code != http.StatusOK {
-		t.Errorf("Expected status %d, got %d", http.StatusOK, rec2.Code)
+	if got := strings.TrimSpace(rr.Body.String()); got != fmt.Sprintf("%v", expected) {
+		t.Fatalf("Get response %q, want %q", got, fmt.Sprintf("%v", expected))
 	}
 }
 
