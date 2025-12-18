@@ -1,6 +1,8 @@
 package main
 
 import (
+	"flag"
+	"log"
 	"net/http"
 
 	"github.com/afanasjev/metrics-collector/internal/handler/counter"
@@ -9,13 +11,11 @@ import (
 	"github.com/go-chi/chi/v5"
 )
 
-const (
-	UpdatePath        = "/update/"
-	CounterUpdatePath = "/update/counter/"
-	GaugeUpdatePath   = "/update/gauge/"
-)
+var ServerAddress string
 
 func main() {
+	flag.StringVar(&ServerAddress, "a", "localhost:8080", "address to listen on")
+	flag.Parse()
 	run()
 }
 
@@ -32,7 +32,7 @@ func run() {
 	router.Get("/value/counter/{metricName}", counter.Get)
 	router.Get("/value/gauge/{metricName}", gauge.Get)
 
-	if err := http.ListenAndServe(":8080", router); err != nil {
-		panic(err)
+	if err := http.ListenAndServe(ServerAddress, router); err != nil {
+		log.Fatal(err)
 	}
 }

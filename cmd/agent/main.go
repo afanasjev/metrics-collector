@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"flag"
 	"fmt"
 	"log"
 	"math/rand"
@@ -13,14 +14,22 @@ import (
 )
 
 const (
-	pollInterval   = 2 * time.Second
-	reportInterval = 10 * time.Second
-	serviceURL     = `http://localhost:8080`
-	PollCount      = `PollCount`
-	RandomValue    = `RandomValue`
+	pollCount   = `PollCount`
+	randomValue = `RandomValue`
 )
 
+var ServerAddress string
+var PollInterval int
+var ReportInterval int
+
 func main() {
+
+	flag.StringVar(&ServerAddress, "a", "localhost:8080", "The server address in the format of host:port")
+	flag.IntVar(&PollInterval, "p", 10, "The poll interval in seconds")
+	flag.IntVar(&ReportInterval, "r", 10, "The report interval in seconds")
+	flag.Parse()
+	ServerAddress = fmt.Sprintf("http://%s", ServerAddress)
+
 	var stats runtime.MemStats
 	ctx := context.Background()
 	wg := &sync.WaitGroup{}
@@ -32,7 +41,7 @@ func main() {
 }
 
 func updateMetrics(ctx context.Context, wg *sync.WaitGroup, stats *runtime.MemStats) {
-	ticker := time.NewTicker(pollInterval)
+	ticker := time.NewTicker(time.Duration(PollInterval) * time.Second)
 	defer ticker.Stop()
 
 	for {
@@ -42,12 +51,14 @@ func updateMetrics(ctx context.Context, wg *sync.WaitGroup, stats *runtime.MemSt
 			wg.Done()
 		case <-ticker.C:
 			runtime.ReadMemStats(stats)
+			wg.Add(1)
+			go sendUpdateCounter(ctx, wg, len(runtimeMemStatsMetricsList()))
 		}
 	}
 }
 
 func sendMetrics(ctx context.Context, wg *sync.WaitGroup, stats *runtime.MemStats) {
-	ticker := time.NewTicker(reportInterval)
+	ticker := time.NewTicker(time.Duration(ReportInterval) * time.Second)
 	defer ticker.Stop()
 	for {
 		select {
@@ -56,16 +67,14 @@ func sendMetrics(ctx context.Context, wg *sync.WaitGroup, stats *runtime.MemStat
 			fmt.Print("shutting down sendMetrics...\n")
 		case <-ticker.C:
 			sendGroup := &sync.WaitGroup{}
-			sendGroup.Add(2)
+			sendGroup.Add(1)
 			go sendGaugeUpdateRandom(ctx, sendGroup)
-			go sendUpdateCounter(ctx, sendGroup)
 			for _, fieldName := range runtimeMemStatsMetricsList() {
 				v := reflect.ValueOf(stats).Elem()
 				field := v.FieldByName(fieldName)
 				if field.IsValid() {
-					sendGroup.Add(2)
+					sendGroup.Add(1)
 					go sendGaugeMetric(ctx, sendGroup, fieldName, fmt.Sprint(field))
-					go sendUpdateCounter(ctx, sendGroup)
 				} else {
 					fmt.Printf("%s: INVALID\n", fieldName)
 				}
@@ -83,7 +92,7 @@ func runtimeMemStatsMetricsList() []string {
 }
 
 func sendGaugeMetric(_ context.Context, wg *sync.WaitGroup, name string, value string) {
-	metricURL := fmt.Sprintf("%s/update/gauge/%v/%v", serviceURL, name, value)
+	metricURL := fmt.Sprintf("%s/update/gauge/%v/%v", ServerAddress, name, value)
 	response, err := http.Post(metricURL, "text/plain", nil)
 	if err != nil {
 		log.Printf("error sending gauge metric %v: %v\n", name, err)
@@ -99,10 +108,10 @@ func sendGaugeMetric(_ context.Context, wg *sync.WaitGroup, name string, value s
 }
 
 func sendGaugeUpdateRandom(_ context.Context, wg *sync.WaitGroup) {
-	metricURL := fmt.Sprintf("%s/update/gauge/%v/%v", serviceURL, RandomValue, rand.Float64())
+	metricURL := fmt.Sprintf("%s/update/gauge/%v/%v", ServerAddress, randomValue, rand.Float64())
 	response, err := http.Post(metricURL, "text/plain", nil)
 	if err != nil {
-		log.Printf("error sending gauge metric %v: %v\n", RandomValue, err)
+		log.Printf("error sending gauge metric %v: %v\n", randomValue, err)
 	}
 
 	defer func() {
@@ -115,9 +124,9 @@ func sendGaugeUpdateRandom(_ context.Context, wg *sync.WaitGroup) {
 	wg.Done()
 }
 
-func sendUpdateCounter(_ context.Context, wg *sync.WaitGroup) {
+func sendUpdateCounter(_ context.Context, wg *sync.WaitGroup, counter int) {
 	response, err := http.Post(
-		fmt.Sprintf("%s/update/counter/%v/%v", serviceURL, PollCount, "1"),
+		fmt.Sprintf("%s/update/counter/%v/%v", ServerAddress, pollCount, counter),
 		`text/plain`,
 		nil)
 
