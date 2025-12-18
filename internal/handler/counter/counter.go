@@ -51,7 +51,7 @@ func getCounterValue(path string) (int64, error) {
 	}
 
 	value, err := strconv.ParseInt(params[1], 10, 64)
-	if err != nil {
+	if err != nil || value < 0 {
 		return 0, fmt.Errorf("invalid metric value: %s", params[1])
 	}
 
