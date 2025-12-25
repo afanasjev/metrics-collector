@@ -7,13 +7,16 @@ import (
 )
 
 func TestDefaultHandlerReturnsBadRequest(t *testing.T) {
-	req := httptest.NewRequest(http.MethodGet, "/", nil)
-	rr := httptest.NewRecorder()
+	for _, method := range []string{http.MethodGet, http.MethodPost} {
+		t.Run(method, func(t *testing.T) {
+			req := httptest.NewRequest(method, "/", nil)
+			rr := httptest.NewRecorder()
 
-	DefaultHandler(rr, req)
+			DefaultHandler(rr, req)
 
-	if status := rr.Code; status != http.StatusBadRequest {
-		t.Fatalf("DefaultHandler returned status %d, want %d", status, http.StatusBadRequest)
+			if rr.Code != http.StatusBadRequest {
+				t.Fatalf("DefaultHandler returned status %d, want %d", rr.Code, http.StatusBadRequest)
+			}
+		})
 	}
 }
-

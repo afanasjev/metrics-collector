@@ -2,20 +2,37 @@ package main
 
 import (
 	"flag"
+	"fmt"
 	"log"
 	"net/http"
 
 	"github.com/afanasjev/metrics-collector/internal/handler/counter"
 	"github.com/afanasjev/metrics-collector/internal/handler/gauge"
-
+	"github.com/caarlos0/env/v11"
 	"github.com/go-chi/chi/v5"
 )
 
-var ServerAddress string
+type Configuration struct {
+	ServerAddress string `env:"ADDRESS"`
+}
+
+var cfg Configuration
 
 func main() {
-	flag.StringVar(&ServerAddress, "a", "localhost:8080", "address to listen on")
-	flag.Parse()
+
+	cfg = Configuration{}
+	err := env.Parse(&cfg)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	if cfg.ServerAddress == "" {
+		flag.StringVar(&cfg.ServerAddress, "a", "localhost:8080", "address to listen on")
+		flag.Parse()
+	}
+
+	fmt.Printf("Configuration: %+v\n", cfg)
+
 	run()
 }
 
@@ -32,7 +49,7 @@ func run() {
 	router.Get("/value/counter/{metricName}", counter.Get)
 	router.Get("/value/gauge/{metricName}", gauge.Get)
 
-	if err := http.ListenAndServe(ServerAddress, router); err != nil {
+	if err := http.ListenAndServe(cfg.ServerAddress, router); err != nil {
 		log.Fatal(err)
 	}
 }

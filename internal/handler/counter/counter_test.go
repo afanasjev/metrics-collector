@@ -1,91 +1,89 @@
 package counter
 
 import (
-	"fmt"
 	"net/http"
-	"net/http/httptest"
 	"strings"
 	"testing"
 
+	"github.com/afanasjev/metrics-collector/internal/handler/testutil"
 	"github.com/afanasjev/metrics-collector/internal/repository/memstorage"
 )
 
-func routeRequest(t *testing.T, method string, params map[string]string) *http.Request {
-	t.Helper()
-	req := httptest.NewRequest(method, "/", nil)
-	for key, value := range params {
-		req.SetPathValue(key, value)
-	}
-	return req
-}
-
-func metricNameFromTest(t *testing.T) string {
-	t.Helper()
-	return fmt.Sprintf("handler-counter-%s", strings.ReplaceAll(t.Name(), "/", "-"))
-}
-
-func TestSetCounterSuccess(t *testing.T) {
-	name := metricNameFromTest(t)
-	req := routeRequest(t, http.MethodPost, map[string]string{
-		"metricName":  name,
-		"metricValue": "5",
-	})
-
-	rr := httptest.NewRecorder()
-	Set(rr, req)
-
-	if status := rr.Code; status != http.StatusOK {
-		t.Fatalf("Set returned status %d, want %d", status, http.StatusOK)
+func TestSetCounter(t *testing.T) {
+	testCases := []struct {
+		name       string
+		value      string
+		wantStatus int
+		wantStored bool
+		wantValue  int64
+	}{
+		{name: "valid", value: "5", wantStatus: http.StatusOK, wantStored: true, wantValue: 5},
+		{name: "invalid value", value: "not-an-int", wantStatus: http.StatusBadRequest},
 	}
 
 	storage := memstorage.GetMemStorage()
-	value, err := storage.GetCounter(name)
-	if err != nil {
-		t.Fatalf("GetCounter failed: %v", err)
-	}
-	if value != 5 {
-		t.Fatalf("counter %s = %d, want 5", name, value)
+	for _, tt := range testCases {
+		t.Run(tt.name, func(t *testing.T) {
+			metricName := testutil.MetricName(t, "handler-counter")
+			req, rr := testutil.RequestWithPathValues(t, http.MethodPost, map[string]string{
+				"metricName":  metricName,
+				"metricValue": tt.value,
+			})
+
+			Set(rr, req)
+
+			if rr.Code != tt.wantStatus {
+				t.Fatalf("Set status = %d; want %d", rr.Code, tt.wantStatus)
+			}
+
+			if tt.wantStored {
+				value, err := storage.GetCounter(metricName)
+				if err != nil {
+					t.Fatalf("GetCounter failed: %v", err)
+				}
+				if value != tt.wantValue {
+					t.Fatalf("counter %s = %d, want %d", metricName, value, tt.wantValue)
+				}
+				return
+			}
+
+			if _, err := storage.GetCounter(metricName); err == nil {
+				t.Fatalf("counter %q unexpectedly stored after invalid request", metricName)
+			}
+		})
 	}
 }
 
-func TestSetCounterBadValue(t *testing.T) {
-	name := metricNameFromTest(t)
-	req := routeRequest(t, http.MethodPost, map[string]string{
-		"metricName":  name,
-		"metricValue": "invalid",
+func TestGetCounter(t *testing.T) {
+	t.Run("existing metric", func(t *testing.T) {
+		storage := memstorage.GetMemStorage()
+		metricName := testutil.MetricName(t, "handler-counter")
+		if err := storage.SetCounter(metricName, 42); err != nil {
+			t.Fatalf("SetCounter failed: %v", err)
+		}
+
+		req, rr := testutil.RequestWithPathValues(t, http.MethodGet, map[string]string{
+			"metricName": metricName,
+		})
+		Get(rr, req)
+
+		if rr.Code != http.StatusOK {
+			t.Fatalf("Get status = %d; want %d", rr.Code, http.StatusOK)
+		}
+
+		if got := strings.TrimSpace(rr.Body.String()); got != "42" {
+			t.Fatalf("Get response = %q; want %q", got, "42")
+		}
 	})
 
-	rr := httptest.NewRecorder()
-	Set(rr, req)
+	t.Run("missing metric", func(t *testing.T) {
+		req, rr := testutil.RequestWithPathValues(t, http.MethodGet, map[string]string{
+			"metricName": testutil.MetricName(t, "handler-counter"),
+		})
+		Get(rr, req)
 
-	if status := rr.Code; status != http.StatusBadRequest {
-		t.Fatalf("Set returned status %d, want %d", status, http.StatusBadRequest)
-	}
-
-	if _, err := memstorage.GetMemStorage().GetCounter(name); err == nil {
-		t.Fatalf("expected counter %q to be unset after bad request", name)
-	}
-}
-
-func TestGetCounterOutputsStoredValue(t *testing.T) {
-	name := metricNameFromTest(t)
-	storage := memstorage.GetMemStorage()
-	if err := storage.SetCounter(name, 42); err != nil {
-		t.Fatalf("SetCounter failed: %v", err)
-	}
-
-	req := routeRequest(t, http.MethodGet, map[string]string{
-		"metricName": name,
+		if rr.Code != http.StatusNotFound {
+			t.Fatalf("Get status = %d; want %d", rr.Code, http.StatusNotFound)
+		}
 	})
-	rr := httptest.NewRecorder()
-	Get(rr, req)
-
-	if status := rr.Code; status != http.StatusOK {
-		t.Fatalf("Get returned status %d, want %d", status, http.StatusOK)
-	}
-
-	if got := strings.TrimSpace(rr.Body.String()); got != "42" {
-		t.Fatalf("Get response %q, want %q", got, "42")
-	}
 }
-

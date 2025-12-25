@@ -3,90 +3,89 @@ package gauge
 import (
 	"fmt"
 	"net/http"
-	"net/http/httptest"
 	"strings"
 	"testing"
 
+	"github.com/afanasjev/metrics-collector/internal/handler/testutil"
 	"github.com/afanasjev/metrics-collector/internal/repository/memstorage"
 )
 
-func routeRequest(t *testing.T, method string, params map[string]string) *http.Request {
-	t.Helper()
-	req := httptest.NewRequest(method, "/", nil)
-	for key, value := range params {
-		req.SetPathValue(key, value)
-	}
-	return req
-}
-
-func metricNameFromTest(t *testing.T) string {
-	t.Helper()
-	return fmt.Sprintf("handler-gauge-%s", strings.ReplaceAll(t.Name(), "/", "-"))
-}
-
-func TestSetGaugeSuccess(t *testing.T) {
-	name := metricNameFromTest(t)
-	req := routeRequest(t, http.MethodPost, map[string]string{
-		"metricName":  name,
-		"metricValue": "2.5",
-	})
-
-	rr := httptest.NewRecorder()
-	Set(rr, req)
-
-	if status := rr.Code; status != http.StatusOK {
-		t.Fatalf("Set returned status %d, want %d", status, http.StatusOK)
+func TestSetGauge(t *testing.T) {
+	testCases := []struct {
+		name       string
+		value      string
+		wantStatus int
+		wantStored bool
+		wantValue  float64
+	}{
+		{name: "valid", value: "2.5", wantStatus: http.StatusOK, wantStored: true, wantValue: 2.5},
+		{name: "invalid value", value: "NaNnotfloat", wantStatus: http.StatusBadRequest},
 	}
 
 	storage := memstorage.GetMemStorage()
-	value, err := storage.GetGauge(name)
-	if err != nil {
-		t.Fatalf("GetGauge failed: %v", err)
-	}
-	if value != 2.5 {
-		t.Fatalf("gauge %s = %g, want %g", name, value, 2.5)
+	for _, tt := range testCases {
+		t.Run(tt.name, func(t *testing.T) {
+			metricName := testutil.MetricName(t, "handler-gauge")
+			req, rr := testutil.RequestWithPathValues(t, http.MethodPost, map[string]string{
+				"metricName":  metricName,
+				"metricValue": tt.value,
+			})
+
+			Set(rr, req)
+
+			if rr.Code != tt.wantStatus {
+				t.Fatalf("Set status = %d; want %d", rr.Code, tt.wantStatus)
+			}
+
+			if tt.wantStored {
+				value, err := storage.GetGauge(metricName)
+				if err != nil {
+					t.Fatalf("GetGauge failed: %v", err)
+				}
+				if value != tt.wantValue {
+					t.Fatalf("gauge %s = %v, want %v", metricName, value, tt.wantValue)
+				}
+				return
+			}
+
+			if _, err := storage.GetGauge(metricName); err == nil {
+				t.Fatalf("gauge %q unexpectedly stored after invalid request", metricName)
+			}
+		})
 	}
 }
 
-func TestSetGaugeBadValue(t *testing.T) {
-	name := metricNameFromTest(t)
-	req := routeRequest(t, http.MethodPost, map[string]string{
-		"metricName":  name,
-		"metricValue": "NaNnotfloat",
+func TestGetGauge(t *testing.T) {
+	t.Run("existing metric", func(t *testing.T) {
+		storage := memstorage.GetMemStorage()
+		metricName := testutil.MetricName(t, "handler-gauge")
+		const expected = 1.234
+		if err := storage.SetGauge(metricName, expected); err != nil {
+			t.Fatalf("SetGauge failed: %v", err)
+		}
+
+		req, rr := testutil.RequestWithPathValues(t, http.MethodGet, map[string]string{
+			"metricName": metricName,
+		})
+		Get(rr, req)
+
+		if rr.Code != http.StatusOK {
+			t.Fatalf("Get status = %d; want %d", rr.Code, http.StatusOK)
+		}
+
+		if got := strings.TrimSpace(rr.Body.String()); got != fmt.Sprintf("%v", expected) {
+			t.Fatalf("Get response = %q; want %q", got, fmt.Sprintf("%v", expected))
+		}
 	})
 
-	rr := httptest.NewRecorder()
-	Set(rr, req)
+	t.Run("missing metric", func(t *testing.T) {
+		req, rr := testutil.RequestWithPathValues(t, http.MethodGet, map[string]string{
+			"metricName": testutil.MetricName(t, "handler-gauge"),
+		})
+		Get(rr, req)
 
-	if status := rr.Code; status != http.StatusBadRequest {
-		t.Fatalf("Set returned status %d, want %d", status, http.StatusBadRequest)
-	}
-
-	if _, err := memstorage.GetMemStorage().GetGauge(name); err == nil {
-		t.Fatalf("expected gauge %q to be unset after bad request", name)
-	}
-}
-
-func TestGetGaugeOutputsStoredValue(t *testing.T) {
-	name := metricNameFromTest(t)
-	storage := memstorage.GetMemStorage()
-	const expected = 1.234
-	if err := storage.SetGauge(name, expected); err != nil {
-		t.Fatalf("SetGauge failed: %v", err)
-	}
-
-	req := routeRequest(t, http.MethodGet, map[string]string{
-		"metricName": name,
+		if rr.Code != http.StatusNotFound {
+			t.Fatalf("Get status = %d; want %d", rr.Code, http.StatusNotFound)
+		}
 	})
-	rr := httptest.NewRecorder()
-	Get(rr, req)
-
-	if status := rr.Code; status != http.StatusOK {
-		t.Fatalf("Get returned status %d, want %d", status, http.StatusOK)
-	}
-
-	if got := strings.TrimSpace(rr.Body.String()); got != fmt.Sprintf("%v", expected) {
-		t.Fatalf("Get response %q, want %q", got, fmt.Sprintf("%v", expected))
-	}
 }
-
