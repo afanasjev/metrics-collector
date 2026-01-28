@@ -1,6 +1,7 @@
 package gauge
 
 import (
+	"errors"
 	"fmt"
 	"net/http"
 	"strings"
@@ -73,8 +74,9 @@ func TestGetGauge(t *testing.T) {
 			t.Fatalf("Get status = %d; want %d", rr.Code, http.StatusOK)
 		}
 
-		if got := strings.TrimSpace(rr.Body.String()); got != fmt.Sprintf("%v", expected) {
-			t.Fatalf("Get response = %q; want %q", got, fmt.Sprintf("%v", expected))
+		wantBody := fmt.Sprintf("%v", expected)
+		if got := strings.TrimSpace(rr.Body.String()); got != wantBody {
+			t.Fatalf("Get response = %q; want %q", got, wantBody)
 		}
 	})
 
@@ -86,6 +88,25 @@ func TestGetGauge(t *testing.T) {
 
 		if rr.Code != http.StatusNotFound {
 			t.Fatalf("Get status = %d; want %d", rr.Code, http.StatusNotFound)
+		}
+	})
+
+	t.Run("write failure returns 500", func(t *testing.T) {
+		storage := memstorage.GetMemStorage()
+		metricName := testutil.MetricName(t, "handler-gauge")
+		if err := storage.SetGauge(metricName, 2.5); err != nil {
+			t.Fatalf("SetGauge failed for preparation: %v", err)
+		}
+
+		req, _ := testutil.RequestWithPathValues(t, http.MethodGet, map[string]string{
+			"metricName": metricName,
+		})
+		writer := testutil.NewFailingResponseWriter(errors.New("write failure"))
+
+		Get(writer, req)
+
+		if writer.Status() != http.StatusInternalServerError {
+			t.Fatalf("status = %d, want %d", writer.Status(), http.StatusInternalServerError)
 		}
 	})
 }

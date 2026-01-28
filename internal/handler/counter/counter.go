@@ -9,27 +9,20 @@ import (
 	"github.com/afanasjev/metrics-collector/internal/repository/memstorage"
 )
 
-type Handler struct{}
-
 func Set(w http.ResponseWriter, r *http.Request) {
 	log.SetPrefix("[handler/counter/ServeHTTP")
-	metricName := r.PathValue("metricName")
-
 	metricValue, err := strconv.ParseInt(r.PathValue("metricValue"), 10, 64)
 	if err != nil {
 		log.Print(err)
 		w.WriteHeader(http.StatusBadRequest)
 		return
 	}
-
-	storage := memstorage.GetMemStorage()
-	err = storage.SetCounter(metricName, metricValue)
+	err = SetCounter(r.PathValue("metricName"), metricValue)
 	if err != nil {
 		log.Print(err)
-		w.WriteHeader(http.StatusInternalServerError)
+		w.WriteHeader(http.StatusBadRequest)
 		return
 	}
-	log.Print(storage.PrintCounter())
 }
 
 func Get(w http.ResponseWriter, r *http.Request) {
@@ -42,5 +35,19 @@ func Get(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusNotFound)
 		return
 	}
-	fmt.Fprintf(w, "%v", value)
+	_, err = fmt.Fprintf(w, "%v", value)
+	if err != nil {
+		log.Print(err)
+		w.WriteHeader(http.StatusInternalServerError)
+		return
+	}
+}
+
+func SetCounter(name string, value int64) error {
+	storage := memstorage.GetMemStorage()
+	return storage.SetCounter(name, value)
+}
+func GetCounter(name string) (int64, error) {
+	storage := memstorage.GetMemStorage()
+	return storage.GetCounter(name)
 }
