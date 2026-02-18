@@ -9,8 +9,6 @@ import (
 	"github.com/afanasjev/metrics-collector/internal/repository/memstorage"
 )
 
-type Handler struct{}
-
 func Set(w http.ResponseWriter, r *http.Request) {
 	log.SetPrefix("[handler/counter/ServeHTTP")
 	metricName := r.PathValue("metricName")
@@ -22,14 +20,24 @@ func Set(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	storage := memstorage.GetMemStorage()
-	err = storage.SetGauge(metricName, metricValue)
+	err = SetGauge(metricName, metricValue)
 	if err != nil {
 		log.Print(err)
 		w.WriteHeader(http.StatusInternalServerError)
 		return
 	}
-	log.Print(storage.PrintGauge())
+}
+
+func SetGauge(name string, value float64) error {
+	storage := memstorage.GetMemStorage()
+	return storage.SetGauge(name, value)
+
+}
+
+func GetGauge(name string) (float64, error) {
+	storage := memstorage.GetMemStorage()
+	return storage.GetGauge(name)
+
 }
 
 func Get(w http.ResponseWriter, r *http.Request) {
@@ -42,5 +50,12 @@ func Get(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusNotFound)
 		return
 	}
-	fmt.Fprintf(w, "%v", value)
+
+	w.WriteHeader(http.StatusOK)
+	_, err = fmt.Fprintf(w, "%v", value)
+	if err != nil {
+		log.Print(err)
+		w.WriteHeader(http.StatusInternalServerError)
+		return
+	}
 }

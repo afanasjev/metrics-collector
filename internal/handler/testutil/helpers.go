@@ -29,3 +29,33 @@ func RequestWithPathValues(t *testing.T, method string, values map[string]string
 	}
 	return req, httptest.NewRecorder()
 }
+
+// NewFailingResponseWriter produces a ResponseWriter that always returns an error when written to.
+func NewFailingResponseWriter(writeErr error) *failingResponseWriter {
+	return &failingResponseWriter{
+		header:   make(http.Header),
+		writeErr: writeErr,
+	}
+}
+
+type failingResponseWriter struct {
+	header     http.Header
+	statusCode int
+	writeErr   error
+}
+
+func (f *failingResponseWriter) Header() http.Header {
+	return f.header
+}
+
+func (f *failingResponseWriter) Write([]byte) (int, error) {
+	return 0, f.writeErr
+}
+
+func (f *failingResponseWriter) WriteHeader(statusCode int) {
+	f.statusCode = statusCode
+}
+
+func (f *failingResponseWriter) Status() int {
+	return f.statusCode
+}
